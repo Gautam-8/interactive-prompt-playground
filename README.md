@@ -2,6 +2,10 @@
 
 A clean, modern web application to test OpenAI API parameters and see how they affect AI-generated responses in real-time.
 
+## 🚀 Live Demo
+
+**Try it now:** [https://interactive-prompt-playground-amber.vercel.app/](https://interactive-prompt-playground-amber.vercel.app/)
+
 ## Features
 
 - **Real-time Parameter Testing** - Adjust temperature, tokens, penalties and see immediate results
