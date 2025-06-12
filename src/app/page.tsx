@@ -388,7 +388,7 @@ export default function Home() {
                     type="text"
                     value={config.stopSequence}
                     onChange={(e) => setConfig({ ...config, stopSequence: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm text-gray-800"
                     placeholder="e.g., ###"
                   />
                 </div>
