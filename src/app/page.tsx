@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Play, Trash2, Settings, Zap } from 'lucide-react';
+import { Play, Trash2, Settings, Zap, ChevronDown, ChevronUp, MoreHorizontal } from 'lucide-react';
 
 interface PromptConfig {
   systemPrompt: string;
@@ -14,11 +14,21 @@ interface PromptConfig {
   stopSequence: string;
 }
 
+interface PromptComparison {
+  changes: string;  // Combined changes and effects
+}
+
 interface TestResult {
   config: PromptConfig;
   output: string;
   error?: string;
   timestamp: string;
+}
+
+interface ResultGroup {
+  prompt: string;
+  results: TestResult[];
+  comparison?: PromptComparison;
 }
 
 export default function Home() {
@@ -35,6 +45,140 @@ export default function Home() {
 
   const [results, setResults] = useState<TestResult[]>([]);
   const [isRunning, setIsRunning] = useState(false);
+
+  // Function to get explanation for temperature change
+  const getTemperatureExplanation = (prev: number, current: number): string => {
+    const diff = current - prev;
+    if (diff > 0.3) return "resulting in much more creative and diverse responses";
+    if (diff > 0) return "leading to slightly more varied outputs";
+    if (diff < -0.3) return "making responses much more focused and deterministic";
+    return "producing slightly more consistent outputs";
+  };
+
+  // Function to get explanation for max tokens change
+  const getTokensExplanation = (prev: number, current: number): string => {
+    const diff = current - prev;
+    if (diff > 100) return "allowing for significantly longer, more detailed responses";
+    if (diff > 0) return "allowing for slightly more detailed outputs";
+    if (diff < -100) return "making responses much more concise";
+    return "producing more condensed outputs";
+  };
+
+  // Function to analyze parameter changes and their effects
+  const generateComparison = (results: TestResult[]): PromptComparison | undefined => {
+    if (results.length < 2) return undefined;
+
+    const changes: string[] = [];
+    const latestConfig = results[0].config;
+    const previousConfig = results[1].config;
+
+    // Compare model
+    if (latestConfig.model !== previousConfig.model) {
+      changes.push(
+        latestConfig.model === 'gpt-4' 
+          ? `Switched to ${latestConfig.model} for more nuanced understanding and complex reasoning`
+          : `Switched to ${latestConfig.model} for faster responses while maintaining good quality`
+      );
+    }
+
+    // Compare temperature
+    if (latestConfig.temperature !== previousConfig.temperature) {
+      changes.push(
+        `Adjusted temperature from ${previousConfig.temperature} to ${latestConfig.temperature}, ${
+          getTemperatureExplanation(previousConfig.temperature, latestConfig.temperature)
+        }`
+      );
+    }
+
+    // Compare max tokens
+    if (latestConfig.maxTokens !== previousConfig.maxTokens) {
+      changes.push(
+        `Changed max tokens from ${previousConfig.maxTokens} to ${latestConfig.maxTokens}, ${
+          getTokensExplanation(previousConfig.maxTokens, latestConfig.maxTokens)
+        }`
+      );
+    }
+
+    // Compare presence penalty
+    if (latestConfig.presencePenalty !== previousConfig.presencePenalty) {
+      const direction = latestConfig.presencePenalty > previousConfig.presencePenalty ? "increased" : "decreased";
+      changes.push(
+        `${direction} presence penalty from ${previousConfig.presencePenalty} to ${latestConfig.presencePenalty}, ${
+          latestConfig.presencePenalty > previousConfig.presencePenalty
+            ? "encouraging more diverse topic coverage"
+            : "allowing more natural topic repetition"
+        }`
+      );
+    }
+
+    // Compare frequency penalty
+    if (latestConfig.frequencyPenalty !== previousConfig.frequencyPenalty) {
+      const direction = latestConfig.frequencyPenalty > previousConfig.frequencyPenalty ? "increased" : "decreased";
+      changes.push(
+        `${direction} frequency penalty from ${previousConfig.frequencyPenalty} to ${latestConfig.frequencyPenalty}, ${
+          latestConfig.frequencyPenalty > previousConfig.frequencyPenalty
+            ? "reducing word and phrase repetition"
+            : "allowing more natural word patterns"
+        }`
+      );
+    }
+
+    // Compare stop sequence
+    if (latestConfig.stopSequence !== previousConfig.stopSequence) {
+      if (!previousConfig.stopSequence && latestConfig.stopSequence) {
+        changes.push(
+          `Added stop sequence "${latestConfig.stopSequence}", controlling where the response ends`
+        );
+      } else if (previousConfig.stopSequence && !latestConfig.stopSequence) {
+        changes.push(
+          `Removed stop sequence "${previousConfig.stopSequence}", allowing natural completion`
+        );
+      } else {
+        changes.push(
+          `Changed stop sequence from "${previousConfig.stopSequence}" to "${latestConfig.stopSequence}", modifying response termination`
+        );
+      }
+    }
+
+    if (changes.length === 0) return undefined;
+
+    return {
+      changes: changes.length === 1 
+        ? changes[0] 
+        : "Made multiple adjustments: " + changes.join("; ")
+    };
+  };
+
+  // Function to group results by prompt
+  const getGroupedResults = (results: TestResult[]): ResultGroup[] => {
+    const groups = new Map<string, TestResult[]>();
+    
+    // Group by user prompt
+    results.forEach(result => {
+      const prompt = result.config.userPrompt;
+      const group = groups.get(prompt) || [];
+      groups.set(prompt, [...group, result]);
+    });
+
+    // Convert to array and sort groups by most recent result
+    return Array.from(groups.entries())
+      .map(([prompt, groupResults]) => {
+        // Sort results within group by timestamp (most recent first)
+        const sortedResults = groupResults.sort((a, b) => 
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        );
+
+        return {
+          prompt,
+          results: sortedResults,
+          comparison: generateComparison(sortedResults)
+        };
+      })
+      // Sort groups by most recent result's timestamp
+      .sort((a, b) => 
+        new Date(b.results[0].timestamp).getTime() - new Date(a.results[0].timestamp).getTime()
+      );
+  };
 
   const runTest = async () => {
     setIsRunning(true);
@@ -270,22 +414,20 @@ export default function Home() {
            </div>
 
           {/* Right Section - Results */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <div className="bg-gradient-to-r from-green-50 to-emerald-50 px-6 py-4 border-b border-gray-200">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-4 border-b border-gray-200">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                  <h2 className="text-lg font-semibold text-gray-900">
-                    Results {results.length > 0 && `(${results.length})`}
-                  </h2>
+                  <Play className="w-5 h-5 text-blue-600" />
+                  <h2 className="text-lg font-semibold text-gray-900">Results</h2>
                 </div>
                 {results.length > 0 && (
                   <button
                     onClick={clearResults}
-                    className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    className="text-sm text-gray-600 hover:text-gray-700 flex items-center gap-1"
                   >
                     <Trash2 className="w-4 h-4" />
-                    Clear
+                    Clear All
                   </button>
                 )}
               </div>
@@ -303,44 +445,85 @@ export default function Home() {
                   </p>
                 </div>
               ) : (
-                <div className="p-6 space-y-4">
-                  {results.map((result, index) => (
-                    <div key={index} className="border border-gray-200 rounded-lg overflow-hidden">
-                      {/* Result Header */}
-                      <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-4 text-sm">
-                            <span className="font-medium text-gray-900">{result.config.model}</span>
-                            <span className="text-gray-600">T:{result.config.temperature}</span>
-                            <span className="text-gray-600">{result.config.maxTokens}t</span>
-                            <span className="text-gray-600">P:{result.config.presencePenalty}</span>
-                            <span className="text-gray-600">F:{result.config.frequencyPenalty}</span>
+                <div className="p-6 space-y-6">
+                  {getGroupedResults(results).map((group, groupIndex) => (
+                    <div key={groupIndex} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                      {/* Prompt Card Header */}
+                      <div className="bg-gradient-to-r from-gray-50 to-white px-6 py-4 border-b border-gray-200">
+                        <div className="flex items-start gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+                            <Settings className="w-4 h-4 text-blue-500" />
                           </div>
-                          <span className="text-xs text-gray-500">{result.timestamp}</span>
+                          <div>
+                            <h3 className="text-sm font-medium text-gray-500 mb-1">Prompt</h3>
+                            <p className="text-base text-gray-900">{group.prompt}</p>
+                          </div>
                         </div>
                       </div>
 
-                      {/* Result Content */}
-                      <div className="p-4">
-                        {result.error ? (
-                          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                            <div className="flex items-start gap-2">
-                              <div className="w-2 h-2 bg-red-500 rounded-full mt-2"></div>
-                              <div>
-                                <p className="font-medium text-red-800 mb-1">Error</p>
-                                <p className="text-red-700 text-sm">{result.error}</p>
+                      {/* Response Cards */}
+                      <div className="divide-y divide-gray-100">
+                        {group.results.map((result, index) => {
+                          const isFirstPrompt = index === group.results.length - 1; // Since results are sorted newest first
+                          const isFirstAttemptOfNewPrompt = index === 0 && groupIndex > 0; // First attempt of a different prompt
+                          
+                          return (
+                            <div 
+                              key={index} 
+                              className="bg-white"
+                            >
+                              {/* Config Bar */}
+                              <div className="px-6 py-3 flex items-center justify-between bg-gray-50 border-y border-gray-100">
+                                <div className="flex items-center gap-4">
+                                  <div className="flex items-center gap-3 text-sm">
+                                    <span className={`px-2 py-1 rounded ${
+                                      result.config.model === 'gpt-4' 
+                                        ? 'bg-purple-100 text-purple-700' 
+                                        : 'bg-green-100 text-green-700'
+                                    }`}>
+                                      {result.config.model}
+                                    </span>
+                                    <span className="text-gray-600">
+                                      temp: {result.config.temperature}
+                                    </span>
+                                    <span className="text-gray-600">
+                                      max tokens: {result.config.maxTokens}
+                                    </span>
+                                  </div>
+                                </div>
+                                <span className="text-xs text-gray-500">{result.timestamp}</span>
+                              </div>
+
+                              {/* Comparison with Previous (if exists and not first prompt or first of new prompt) */}
+                              {!isFirstPrompt && !isFirstAttemptOfNewPrompt && index < group.results.length - 1 && (
+                                <div className="px-6 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-y border-gray-100">
+                                  <p className="text-sm text-gray-700">
+                                    <span className="font-medium">Changes: </span>
+                                    {group.comparison?.changes}
+                                  </p>
+                                </div>
+                              )}
+
+                              {/* Result Content */}
+                              <div className="px-6 py-4">
+                                {result.error ? (
+                                  <div className="bg-red-50 text-red-700 p-4 rounded-lg border border-red-200">
+                                    <p className="font-medium">Error</p>
+                                    <p className="mt-1">{result.error}</p>
+                                  </div>
+                                ) : (
+                                  <div className="prose prose-sm max-w-none">
+                                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                                      <p className="text-gray-800 leading-relaxed whitespace-pre-wrap">
+                                        {result.output}
+                                      </p>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             </div>
-                          </div>
-                        ) : (
-                          <div className="prose prose-sm max-w-none">
-                            <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                              <p className="text-gray-800 leading-relaxed whitespace-pre-wrap">
-                                {result.output}
-                              </p>
-                            </div>
-                          </div>
-                        )}
+                          );
+                        })}
                       </div>
                     </div>
                   ))}
